@@ -24,18 +24,38 @@ pub fn derive(input: TokenStream) -> TokenStream {
         quote! { #name: Option<#ty> }
     });
 
-    let builder_tokens = quote! {
+    let builder_struct = quote! {
         pub struct #builder_ident {
             #(#struct_fields,)*
         }
     };
 
+    // Initialise each struct field to None
     let struct_initialisers = data.fields.iter().map(|f| {
         let name = &f.ident;
         quote! { #name: None }
     });
 
+    // Create a method to set each struct field
+    let builder_methods = data.fields.iter().map(|f| {
+        let name = &f.ident;
+        let ty = &f.ty;
+        quote! {
+            pub fn #name(&mut self, #name: #ty) -> &mut Self {
+                self.#name = Some(#name);
+                self
+            }
+        }
+    });
+
     let builder_impl = quote! {
+        impl #builder_ident {
+            #(#builder_methods)*
+        }
+    };
+
+    // Create a builder() method on the original struct
+    let struct_impl = quote! {
         impl #struct_ident {
             pub fn builder() -> #builder_ident {
                 #builder_ident {
@@ -46,7 +66,8 @@ pub fn derive(input: TokenStream) -> TokenStream {
     };
 
     quote! {
-        #builder_tokens
+        #struct_impl
+        #builder_struct
         #builder_impl
     }
     .into()
