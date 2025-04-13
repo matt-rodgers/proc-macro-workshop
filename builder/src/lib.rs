@@ -52,11 +52,11 @@ pub fn derive(input: TokenStream) -> TokenStream {
     let set_fields = data.fields.iter().map(|f| {
         let name = &f.ident;
         let err_msg = format!("Field '{}' is not set", name.as_ref().unwrap());
-        quote! { #name: self.#name.ok_or_else(|| #err_msg.to_string())? }
+        quote! { #name: self.#name.clone().ok_or_else(|| #err_msg.to_string())? }
     });
 
     let build_method = quote! {
-        pub fn build(mut self) -> Result<#struct_ident, Box<dyn std::error::Error>> {
+        pub fn build(&mut self) -> Result<#struct_ident, Box<dyn std::error::Error>> {
             Ok(#struct_ident {
                 #(#set_fields,)*
             })
