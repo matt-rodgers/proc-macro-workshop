@@ -161,9 +161,9 @@ fn extract_inner_type<'a, 'b>(
 
 /// If a field has an attribute matching the pattern:
 ///   #[builder(each = "name")]
-/// Then confirm that the type is a Vec<T>, and return Some(name, inner_ty).
-/// Otherwise return None.
-/// panics on unrecognised attributes.
+/// Then confirm that the type is a Vec<T>, and return Ok(Some(name, inner_ty)).
+/// If there are no attrinutes, return Ok(None).
+/// If there is an unrecognised attribute, return an Error.
 fn get_extend_ident(f: &syn::Field) -> Result<Option<(syn::Ident, syn::Type)>, syn::Error> {
     for attr in f.attrs.iter() {
         if attr.path().is_ident("builder") {
@@ -184,9 +184,15 @@ fn get_extend_ident(f: &syn::Field) -> Result<Option<(syn::Ident, syn::Type)>, s
 
             let each = each.unwrap(); // Already returned an error if no correct attribute
 
-            let inner = extract_inner_type(&f.ty, "Vec").unwrap_or_else(|| {
-                panic!("Type must be Vec<T> for any field with an 'each' attribute");
-            });
+            let inner = match extract_inner_type(&f.ty, "Vec") {
+                Some(inner) => inner,
+                None => {
+                    return Err(syn::Error::new_spanned(
+                        f,
+                        "field must be a Vec<T> to use `builder(each = \"...\")` attribute",
+                    ));
+                }
+            };
 
             let ident = syn::Ident::new(&each.value(), each.span());
             return Ok(Some((ident, inner.clone())));
