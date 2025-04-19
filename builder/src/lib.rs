@@ -42,9 +42,10 @@ pub fn derive(input: TokenStream) -> TokenStream {
 
     // Create a method to set each struct field
     let builder_methods = data.fields.iter().map(|f| {
-        let name = &f.ident;
+        let name = f.ident.as_ref().unwrap();
         let ty = &f.ty;
 
+        // Put a compile_error!() into the generated code on wrong use of attributes
         let extend = match get_extend_ident(&f) {
             Ok(ext) => ext,
             Err(e) => {
@@ -52,30 +53,34 @@ pub fn derive(input: TokenStream) -> TokenStream {
             }
         };
 
-        if let Some((extend_ident, inner_ty)) = extend {
+        let (func_name, arg_ty, action) = if let Some((extend_ident, inner_ty)) = extend {
             // If the field is extendable, the function should push values to the Vec<T>
-            quote! {
-                pub fn #extend_ident(&mut self, #extend_ident: #inner_ty) -> &mut Self {
-                    self.#name.push(#extend_ident);
-                    self
-                }
-            }
+            (
+                extend_ident.clone(),
+                inner_ty,
+                quote! { self.#name.push(#extend_ident) },
+            )
         } else if let Some(inner) = extract_inner_type(ty, "Option") {
             // If the field was originally an Option, the function should accept the inner type and
             // store in an Option
-            quote! {
-                pub fn #name(&mut self, #name: #inner) -> &mut Self {
-                    self.#name = std::option::Option::Some(#name);
-                    self
-                }
-            }
+            (
+                name.clone(),
+                inner.clone(),
+                quote! { self.#name = std::option::Option::Some(#name) },
+            )
         } else {
             // Otherwise, the function should accept the original type, and store in an Option
-            quote! {
-                pub fn #name(&mut self, #name: #ty) -> &mut Self {
-                    self.#name = std::option::Option::Some(#name);
-                    self
-                }
+            (
+                name.clone(),
+                ty.clone(),
+                quote! { self.#name = std::option::Option::Some(#name) },
+            )
+        };
+
+        quote! {
+            pub fn #func_name(&mut self, #func_name: #arg_ty) -> &mut Self {
+                #action;
+                self
             }
         }
     });
@@ -95,6 +100,8 @@ pub fn derive(input: TokenStream) -> TokenStream {
         }
     });
 
+    let builder_doc = format!("A builder for [{}]", struct_ident);
+
     quote! {
         impl #struct_ident {
             pub fn builder() -> #builder_ident {
@@ -104,6 +111,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
             }
         }
 
+        #[doc = #builder_doc]
         pub struct #builder_ident {
             #(#builder_fields,)*
         }
