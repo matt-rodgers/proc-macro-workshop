@@ -157,57 +157,27 @@ fn extract_inner_type<'a, 'b>(
 /// Then confirm that the type is a Vec<T>, and return Some(name, inner_ty).
 /// Otherwise return None.
 /// panics on unrecognised attributes.
-fn get_extend_ident(f: &syn::Field) -> std::option::Option<(syn::Ident, syn::Type)> {
+fn get_extend_ident(f: &syn::Field) -> Option<(syn::Ident, syn::Type)> {
     for attr in f.attrs.iter() {
-        match attr.meta {
-            syn::Meta::List(ref l) => {
-                if l.path.segments[0].ident != "builder" {
-                    panic!("Expected 'builder' attribute");
+        if attr.path().is_ident("builder") {
+            let mut each = None;
+            let _res = attr.parse_nested_meta(|meta| {
+                if meta.path.is_ident("each") {
+                    let val = meta.value()?;
+                    let s: syn::LitStr = val.parse()?;
+                    each = Some(s);
                 }
+                Ok(())
+            });
 
-                let mut ti = l.tokens.clone().into_iter();
+            let each = each.unwrap_or_else(|| panic!("Expected 'each' attribute"));
 
-                match ti.next() {
-                    Some(proc_macro2::TokenTree::Ident(i)) => {
-                        assert_eq!(i, "each");
-                    }
-                    _ => {
-                        panic!("Expected Ident(each)");
-                    }
-                }
+            let inner = extract_inner_type(&f.ty, "Vec").unwrap_or_else(|| {
+                panic!("Type must be Vec<T> for any field with an 'each' attribute");
+            });
 
-                match ti.next() {
-                    Some(proc_macro2::TokenTree::Punct(p)) => {
-                        assert_eq!(p.as_char(), '=');
-                    }
-                    _ => {
-                        panic!("Expected Punct('=')")
-                    }
-                }
-
-                match ti.next() {
-                    Some(proc_macro2::TokenTree::Literal(lit)) => match syn::Lit::new(lit) {
-                        syn::Lit::Str(s) => match extract_inner_type(&f.ty, "Vec") {
-                            Some(inner) => {
-                                let ident = syn::Ident::new(&s.value(), s.span());
-                                return Some((ident, inner.clone()));
-                            }
-                            _ => {
-                                panic!("It is not valid to have a #[builder(each = ...)] attribute on a field which is not a Vec");
-                            }
-                        },
-                        _ => {
-                            panic!("Expected string literal");
-                        }
-                    },
-                    _ => {
-                        panic!("Expected literal");
-                    }
-                }
-            }
-            _ => {
-                panic!("Expected Meta::List attr");
-            }
+            let ident = syn::Ident::new(&each.value(), each.span());
+            return Some((ident, inner.clone()));
         }
     }
 
