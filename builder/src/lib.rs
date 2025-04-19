@@ -21,7 +21,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
         let name = &f.ident;
         let ty = &f.ty;
 
-        if let Some(_) = get_extend_ident(&f) {
+        if let Ok(Some(_)) = get_extend_ident(&f) {
             quote! { #name: #ty }
         } else if let Some(_) = extract_inner_type(ty, "Option") {
             quote! { #name: #ty}
@@ -35,7 +35,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
         let name = &f.ident;
 
         match get_extend_ident(&f) {
-            Some(_) => quote! { #name: Vec::new() },
+            Ok(Some(_)) => quote! { #name: Vec::new() },
             _ => quote! { #name: None },
         }
     });
@@ -45,7 +45,14 @@ pub fn derive(input: TokenStream) -> TokenStream {
         let name = &f.ident;
         let ty = &f.ty;
 
-        if let Some((extend_ident, inner_ty)) = get_extend_ident(&f) {
+        let extend = match get_extend_ident(&f) {
+            Ok(ext) => ext,
+            Err(e) => {
+                return e.to_compile_error();
+            }
+        };
+
+        if let Some((extend_ident, inner_ty)) = extend {
             // If the field is extendable, the function should push values to the Vec<T>
             quote! {
                 pub fn #extend_ident(&mut self, #extend_ident: #inner_ty) -> &mut Self {
@@ -78,7 +85,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
         let name = &f.ident;
         let ty = &f.ty;
 
-        if let Some(_) = get_extend_ident(&f) {
+        if let Ok(Some(_)) = get_extend_ident(&f) {
             quote! { #name: self.#name.clone() }
         } else if let Some(_) = extract_inner_type(ty, "Option") {
             quote! { #name: self.#name.clone() }
@@ -157,29 +164,39 @@ fn extract_inner_type<'a, 'b>(
 /// Then confirm that the type is a Vec<T>, and return Some(name, inner_ty).
 /// Otherwise return None.
 /// panics on unrecognised attributes.
-fn get_extend_ident(f: &syn::Field) -> Option<(syn::Ident, syn::Type)> {
+fn get_extend_ident(f: &syn::Field) -> Result<Option<(syn::Ident, syn::Type)>, syn::Error> {
     for attr in f.attrs.iter() {
         if attr.path().is_ident("builder") {
             let mut each = None;
-            let _res = attr.parse_nested_meta(|meta| {
+            attr.parse_nested_meta(|meta| {
                 if meta.path.is_ident("each") {
                     let val = meta.value()?;
                     let s: syn::LitStr = val.parse()?;
                     each = Some(s);
+                    Ok(())
+                } else {
+                    Err(syn::Error::new_spanned(
+                        attr,
+                        "expected `builder(each = \"...\")`",
+                    ))
                 }
-                Ok(())
-            });
+            })?;
 
-            let each = each.unwrap_or_else(|| panic!("Expected 'each' attribute"));
+            let each = each.unwrap(); // Already returned an error if no correct attribute
 
             let inner = extract_inner_type(&f.ty, "Vec").unwrap_or_else(|| {
                 panic!("Type must be Vec<T> for any field with an 'each' attribute");
             });
 
             let ident = syn::Ident::new(&each.value(), each.span());
-            return Some((ident, inner.clone()));
+            return Ok(Some((ident, inner.clone())));
+        } else {
+            return Err(syn::Error::new_spanned(
+                attr,
+                "expected `builder(each = \"...\")`",
+            ));
         }
     }
 
-    None
+    Ok(None)
 }
