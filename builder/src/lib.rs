@@ -35,8 +35,8 @@ pub fn derive(input: TokenStream) -> TokenStream {
         let name = &f.ident;
 
         match get_extend_ident(&f) {
-            Ok(Some(_)) => quote! { #name: Vec::new() },
-            _ => quote! { #name: None },
+            Ok(Some(_)) => quote! { #name: std::vec::Vec::new() },
+            _ => quote! { #name: std::option::Option::None },
         }
     });
 
@@ -65,7 +65,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
             // store in an Option
             quote! {
                 pub fn #name(&mut self, #name: #inner) -> &mut Self {
-                    self.#name = Some(#name);
+                    self.#name = std::option::Option::Some(#name);
                     self
                 }
             }
@@ -73,7 +73,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
             // Otherwise, the function should accept the original type, and store in an Option
             quote! {
                 pub fn #name(&mut self, #name: #ty) -> &mut Self {
-                    self.#name = Some(#name);
+                    self.#name = std::option::Option::Some(#name);
                     self
                 }
             }
@@ -111,7 +111,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
         impl #builder_ident {
             #(#builder_methods)*
 
-            pub fn build(&mut self) -> Result<#struct_ident, Box<dyn std::error::Error>> {
+            pub fn build(&mut self) -> std::result::Result<#struct_ident, std::boxed::Box<dyn std::error::Error>> {
                 Ok(#struct_ident {
                     #(#set_fields,)*
                 })
