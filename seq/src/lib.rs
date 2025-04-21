@@ -1,5 +1,6 @@
 use proc_macro::TokenStream;
 use syn::{
+    braced,
     parse::{Parse, ParseStream},
     parse_macro_input, Token,
 };
@@ -9,7 +10,8 @@ struct SeqMacroInput {
     repeat_ident: syn::Ident,
     start: syn::Lit,
     end: syn::Lit,
-    block: syn::Block,
+    braces: syn::token::Brace,
+    content: proc_macro2::TokenStream,
 }
 
 impl Parse for SeqMacroInput {
@@ -21,13 +23,16 @@ impl Parse for SeqMacroInput {
         let start = input.parse()?;
         let _dotdot: Token![..] = input.parse()?;
         let end = input.parse()?;
-        let block = input.parse()?;
+        let content;
+        let braces = braced!(content in input);
+        let content = proc_macro2::TokenStream::parse(&content)?;
 
         Ok(SeqMacroInput {
             repeat_ident,
             start,
             end,
-            block,
+            braces,
+            content,
         })
     }
 }
