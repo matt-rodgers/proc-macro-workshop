@@ -28,6 +28,10 @@ seq!(N in 1..4 {
     }
 });
 
+seq!(M in 4..6 {
+    const A_~M~_B: u32 = M;
+});
+
 // This f0 is written separately to detect whether your macro correctly starts
 // with the first iteration at N=1 as specified in the invocation. If the macro
 // incorrectly started at N=0 like in the previous tests cases, the first
@@ -41,4 +45,8 @@ fn main() {
     let sum = f0() + f1() + f2() + f3();
 
     assert_eq!(sum, 100 + 2 + 4 + 6);
+
+    let sum2 = A_4_B + A_5_B;
+    
+    assert_eq!(sum2, 4 + 5);
 }
