@@ -1,5 +1,4 @@
 use proc_macro::TokenStream;
-use quote::quote;
 use syn::{
     braced,
     parse::{Parse, ParseStream},
@@ -58,7 +57,8 @@ fn walk_token_stream(
         .map(|tt| match tt {
             proc_macro2::TokenTree::Group(g) => {
                 let new_ts = walk_token_stream(g.stream(), replace_ident, n);
-                let new_group = proc_macro2::Group::new(g.delimiter(), new_ts);
+                let mut new_group = proc_macro2::Group::new(g.delimiter(), new_ts);
+                new_group.set_span(g.span());
                 proc_macro2::TokenTree::Group(new_group)
             }
             proc_macro2::TokenTree::Ident(ident) if ident == *replace_ident => {
@@ -74,9 +74,11 @@ impl Into<TokenStream> for SeqMacroInput {
     fn into(self) -> TokenStream {
         let range = self.start..self.end;
 
-        let repeats = range.map(|n| walk_token_stream(self.content.clone(), &self.repeat_ident, n));
+        let out: proc_macro2::TokenStream = range
+            .map(|n| walk_token_stream(self.content.clone(), &self.repeat_ident, n))
+            .collect();
 
-        quote! { #( #repeats )* }.into()
+        out.into()
     }
 }
 
