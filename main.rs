@@ -8,18 +8,22 @@
 
 use seq::seq;
 
-seq!(N in 0..16 {
-    #[derive(Copy, Clone, PartialEq, Debug)]
-    enum Interrupt {
+seq!(N in 16..=20 {
+    enum E {
         #(
-            Irq~N,
+            Variant~N,
         )*
     }
 });
 
 fn main() {
-    let interrupt = Interrupt::Irq8;
+    let e = E::Variant16;
 
-    assert_eq!(interrupt as u8, 8);
-    assert_eq!(interrupt, Interrupt::Irq8);
+    let desc = match e {
+        E::Variant16 => "min",
+        E::Variant17 | E::Variant18 | E::Variant19 => "in between",
+        E::Variant20 => "max",
+    };
+
+    assert_eq!(desc, "min");
 }

@@ -38,14 +38,26 @@ impl Parse for SeqMacroInput {
         let repeat_ident = input.parse()?;
         let _in: Token![in] = input.parse()?;
         let start_tok = input.parse()?;
-        let _dotdot: Token![..] = input.parse()?;
+
+        // Parse the range, which may be inclusive `..=` or exclusive `..`
+        let inclusive: bool = if input.peek(Token![..=]) {
+            let _: Token![..=] = input.parse()?;
+            true
+        } else {
+            let _: Token![..] = input.parse()?;
+            false
+        };
+
         let end_tok = input.parse()?;
         let content;
         let _braces = braced!(content in input);
         let content = proc_macro2::TokenStream::parse(&content)?;
 
         let start = parse_numeric_lit(start_tok)?;
-        let end = parse_numeric_lit(end_tok)?;
+        let mut end = parse_numeric_lit(end_tok)?;
+        if inclusive {
+            end += 1;
+        }
 
         Ok(SeqMacroInput {
             repeat_ident,
