@@ -8,8 +8,7 @@ use syn::{
 #[derive(Debug)]
 struct SeqMacroInput {
     repeat_ident: syn::Ident,
-    start: usize,
-    end: usize,
+    range: std::ops::Range<usize>,
     content: proc_macro2::TokenStream,
 }
 
@@ -50,8 +49,7 @@ impl Parse for SeqMacroInput {
 
         Ok(SeqMacroInput {
             repeat_ident,
-            start,
-            end,
+            range: start..end,
             content,
         })
     }
@@ -75,6 +73,44 @@ impl SeqMacroInput {
         let mut i = 0;
         while i < tts.len() {
             let token_out = match (mode, tts.get(i)) {
+                (Mode::FindGroup, Some(proc_macro2::TokenTree::Punct(p1)))
+                    if p1.as_char() == '#' =>
+                {
+                    // If we are looking for a group and we get a '#' Punct, look ahead to see if
+                    // we have a pattern like:
+                    //   #(...)*
+                    match (tts.get(i + 1), tts.get(i + 2)) {
+                        (
+                            Some(proc_macro2::TokenTree::Group(g)),
+                            Some(proc_macro2::TokenTree::Punct(p2)),
+                        ) if g.delimiter() == proc_macro2::Delimiter::Parenthesis
+                            && p2.as_char() == '*' =>
+                        {
+                            // We found a group that should be expanded.
+                            // Expand the group the specified number of times
+                            let new_tokens: proc_macro2::TokenStream = self
+                                .range
+                                .clone()
+                                .map(|n| {
+                                    self.walk_token_stream(g.stream(), Mode::Replace(n), did_mutate)
+                                })
+                                .collect();
+
+                            // Advance i past the consumed tokens, and record that group was found
+                            i += 2;
+                            *did_mutate = true;
+
+                            // We need to return a TokenTree, but we have a TokenStream. Luckily, a
+                            // Group can have a delimiter type of 'None', so make a TokenTree which
+                            // is a group containing our TokenStream.
+                            proc_macro2::TokenTree::Group(proc_macro2::Group::new(
+                                proc_macro2::Delimiter::None,
+                                new_tokens,
+                            ))
+                        }
+                        _ => proc_macro2::TokenTree::Punct(p1.clone()),
+                    }
+                }
                 (_, Some(proc_macro2::TokenTree::Group(g))) => {
                     // On a group, recursively walk the TokenStream inside the group
                     let new_ts = self.walk_token_stream(g.stream(), mode, did_mutate);
@@ -158,10 +194,23 @@ impl SeqMacroInput {
 
 impl Into<TokenStream> for SeqMacroInput {
     fn into(self) -> TokenStream {
-        let range = self.start..self.end;
         let mut did_mutate = false;
 
-        let out: proc_macro2::TokenStream = range
+        // On the first pass, don't initially replace anything unless we find a `#(...)*` group,
+        // in which case perform the replacement inside the group only.
+        let out: proc_macro2::TokenStream =
+            self.walk_token_stream(self.content.clone(), Mode::FindGroup, &mut did_mutate);
+
+        // If we found and replaced a group in the first pass, return the new TokenStream
+        if did_mutate {
+            return out.into();
+        }
+
+        // If we did *not* find and replace a group in the first pass, do a second pass where we
+        // replace the entire content
+        let out: proc_macro2::TokenStream = self
+            .range
+            .clone()
             .map(|n| {
                 self.walk_token_stream(self.content.clone(), Mode::Replace(n), &mut did_mutate)
             })
