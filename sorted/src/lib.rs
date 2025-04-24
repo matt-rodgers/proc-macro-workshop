@@ -1,17 +1,21 @@
 use proc_macro::TokenStream;
-use quote::ToTokens;
 use syn::{parse_macro_input, Result};
 
 #[proc_macro_attribute]
 pub fn sorted(args: TokenStream, input: TokenStream) -> TokenStream {
+    let mut out = input.clone();
+
     let item = parse_macro_input!(input as syn::Item);
 
-    sorted_inner(args, item)
-        .unwrap_or_else(|err| err.to_compile_error())
-        .into()
+    if let Err(e) = sorted_inner(args, item) {
+        let error_tokens: TokenStream = e.to_compile_error().into();
+        out.extend(error_tokens);
+    }
+
+    out
 }
 
-fn sorted_inner(args: TokenStream, item: syn::Item) -> Result<proc_macro2::TokenStream> {
+fn sorted_inner(args: TokenStream, item: syn::Item) -> Result<()> {
     // We don't expect any args for now
     assert!(args.is_empty());
 
@@ -37,7 +41,7 @@ fn sorted_inner(args: TokenStream, item: syn::Item) -> Result<proc_macro2::Token
                     }
                     Err(n) => {
                         return Err(syn::Error::new_spanned(
-                            variant,
+                            variant.ident.clone(),
                             format!("{} should sort before {}", name, names[n]),
                         ));
                     }
@@ -48,5 +52,5 @@ fn sorted_inner(args: TokenStream, item: syn::Item) -> Result<proc_macro2::Token
         names.push(name);
     }
 
-    Ok(enum_item.to_token_stream())
+    Ok(())
 }
