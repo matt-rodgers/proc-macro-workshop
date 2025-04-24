@@ -1,5 +1,6 @@
+use itertools::Itertools;
 use proc_macro::TokenStream;
-use quote::ToTokens;
+use quote::{quote, ToTokens};
 use syn::{parse_macro_input, visit_mut::VisitMut, Result};
 
 /// The sorted macro checks if an Enum's variants are sorted, and returns an error if they are not,
@@ -88,6 +89,7 @@ impl CheckMatchSorted {
     }
 }
 
+// Is the attribute literally `#[sorted]`?
 fn attr_matches_sorted(attr: &syn::Attribute) -> bool {
     if let syn::Meta::Path(ref p) = attr.meta {
         if p.is_ident("sorted") {
@@ -97,6 +99,53 @@ fn attr_matches_sorted(attr: &syn::Attribute) -> bool {
     false
 }
 
+fn path_of_pat(pat: &syn::Pat) -> Result<syn::Path> {
+    match pat {
+        syn::Pat::Ident(ref i) => {
+            // This is something like `ref mut binding @ SUBPATTERN`
+            if let Some((_, ref p)) = i.subpat {
+                path_of_pat(p)
+            } else {
+                Err(syn::Error::new_spanned(
+                    pat.clone(),
+                    "an ident with no subpattern is not sortable",
+                ))
+            }
+        }
+        syn::Pat::Path(ref p) => {
+            // This is something like `std::mem::replace`
+            Ok(p.path.clone())
+        }
+        syn::Pat::Struct(ref s) => {
+            // This is something like `Variant { x, y, .. }`
+            Ok(s.path.clone())
+        }
+        syn::Pat::TupleStruct(ref ts) => {
+            // This is something like `Variant(x, y, .., z)`
+            Ok(ts.path.clone())
+        }
+        syn::Pat::Wild(ref _w) => {
+            // A Wildcard `_` pattern (this must be sorted in the last position)
+            todo!()
+        }
+        _ => {
+            // Anything else is not sortable (at least without becoming very complex...)
+            Err(syn::Error::new_spanned(
+                pat.clone(),
+                "match arm is not sortable",
+            ))
+        }
+    }
+}
+
+fn path_to_string(path: &syn::Path) -> String {
+    // Annoyingly PathSegment doesn't implement Display, so we wrap it in the quote! macro
+    path.segments
+        .iter()
+        .map(|ps| format!("{}", quote! { #ps }))
+        .join("::")
+}
+
 impl syn::visit_mut::VisitMut for CheckMatchSorted {
     fn visit_expr_match_mut(&mut self, m: &mut syn::ExprMatch) {
         // Look for a `#[sorted]` attribute
@@ -104,6 +153,49 @@ impl syn::visit_mut::VisitMut for CheckMatchSorted {
             // Remove the attribute (an attribute on an expression is a compile error)
             m.attrs.retain(|a| !attr_matches_sorted(a));
         }
+
+        // Create an empty Vec to store the paths from each match arm for comparison
+        let mut paths: Vec<String> = Vec::new();
+
+        // Now iterate over the match arms
+        for arm in m.arms.iter() {
+            // Extract a path from the pattern
+            let path = match path_of_pat(&arm.pat) {
+                Ok(p) => p,
+                Err(e) => {
+                    self.error = Some(e);
+                    break;
+                }
+            };
+
+            // Check the path for sort order
+            let pathname = path_to_string(&path);
+            if let Some(last) = paths.last() {
+                if &pathname < last {
+                    // Out of order, find the location it should go in
+                    match paths.binary_search(&pathname) {
+                        Ok(_) => {
+                            self.error = Some(syn::Error::new_spanned(path, "duplicate match arm"));
+                        }
+                        Err(n) => {
+                            self.error = Some(syn::Error::new_spanned(
+                                path.clone(),
+                                format!("{} should sort before {}", pathname, paths[n]),
+                            ));
+                        }
+                    }
+
+                    // Don't bother with any further comparisons after first error
+                    break;
+                }
+            }
+
+            // Store the path for comparison with next arms
+            paths.push(pathname);
+        }
+
+        // recurse
+        syn::visit_mut::visit_expr_match_mut(self, m);
     }
 }
 
