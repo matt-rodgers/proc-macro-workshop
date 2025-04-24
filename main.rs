@@ -8,24 +8,25 @@
 
 use sorted::sorted;
 
-use std::fmt::{self, Display};
-use std::io;
-
 #[sorted]
-pub enum Error {
-    Fmt(fmt::Error),
-    Io(io::Error),
+pub enum Conference {
+    RustBeltRust,
+    RustConf,
+    RustFest,
+    RustLatam,
+    RustRush,
 }
 
-impl Display for Error {
+impl Conference {
     #[sorted::check]
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use self::Error::*;
+    pub fn region(&self) -> &str {
+        use self::Conference::*;
 
         #[sorted]
         match self {
-            Io(e) => write!(f, "{}", e),
-            Fmt(e) => write!(f, "{}", e),
+            RustFest => "Europe",
+            RustLatam => "Latin America",
+            _ => "elsewhere",
         }
     }
 }

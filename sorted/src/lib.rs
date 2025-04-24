@@ -101,16 +101,9 @@ fn attr_matches_sorted(attr: &syn::Attribute) -> bool {
 
 fn path_of_pat(pat: &syn::Pat) -> Result<syn::Path> {
     match pat {
-        syn::Pat::Ident(ref i) => {
-            // This is something like `ref mut binding @ SUBPATTERN`
-            if let Some((_, ref p)) = i.subpat {
-                path_of_pat(p)
-            } else {
-                Err(syn::Error::new_spanned(
-                    pat.clone(),
-                    "an ident with no subpattern is not sortable",
-                ))
-            }
+        syn::Pat::Ident(syn::PatIdent { ident: i, .. }) => {
+            // Something like `Variant` (with no inner stuff)
+            Ok(i.clone().into())
         }
         syn::Pat::Path(ref p) => {
             // This is something like `std::mem::replace`
@@ -123,10 +116,6 @@ fn path_of_pat(pat: &syn::Pat) -> Result<syn::Path> {
         syn::Pat::TupleStruct(ref ts) => {
             // This is something like `Variant(x, y, .., z)`
             Ok(ts.path.clone())
-        }
-        syn::Pat::Wild(ref _w) => {
-            // A Wildcard `_` pattern (this must be sorted in the last position)
-            todo!()
         }
         _ => {
             // Anything else is not sortable (at least without becoming very complex...)
@@ -156,9 +145,25 @@ impl syn::visit_mut::VisitMut for CheckMatchSorted {
 
         // Create an empty Vec to store the paths from each match arm for comparison
         let mut paths: Vec<String> = Vec::new();
+        let mut wildcard: Option<&syn::PatWild> = None;
 
         // Now iterate over the match arms
         for arm in m.arms.iter() {
+            // If we find a wildcard, store it and skip to next arm (if any)
+            if let syn::Pat::Wild(ref w) = arm.pat {
+                wildcard = Some(w);
+                continue;
+            }
+
+            // If we have already seen a wildcard and then get another arm, order is wrong
+            if let Some(w) = wildcard {
+                self.error = Some(syn::Error::new_spanned(
+                    w.clone(),
+                    "wildcard must be sorted last",
+                ));
+                break;
+            }
+
             // Extract a path from the pattern
             let path = match path_of_pat(&arm.pat) {
                 Ok(p) => p,
