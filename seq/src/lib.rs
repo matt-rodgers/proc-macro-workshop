@@ -40,13 +40,12 @@ impl Parse for SeqMacroInput {
         let start_tok = input.parse()?;
 
         // Parse the range, which may be inclusive `..=` or exclusive `..`
-        let inclusive: bool = if input.peek(Token![..=]) {
+        let inclusive = input.peek(Token![..=]);
+        if inclusive {
             let _: Token![..=] = input.parse()?;
-            true
         } else {
             let _: Token![..] = input.parse()?;
-            false
-        };
+        }
 
         let end_tok = input.parse()?;
         let content;
