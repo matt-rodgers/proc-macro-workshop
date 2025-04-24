@@ -132,7 +132,7 @@ fn path_of_pat(pat: &syn::Pat) -> Result<syn::Path> {
             // Anything else is not sortable (at least without becoming very complex...)
             Err(syn::Error::new_spanned(
                 pat.clone(),
-                "match arm is not sortable",
+                "unsupported by #[sorted]",
             ))
         }
     }
