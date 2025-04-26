@@ -6,29 +6,21 @@
 // To run the code:
 //     $ cargo run
 
-use sorted::sorted;
+use derive_debug::CustomDebug;
 
-#[sorted]
-pub enum Conference {
-    RustBeltRust,
-    RustConf,
-    RustFest,
-    RustLatam,
-    RustRush,
+#[derive(CustomDebug)]
+pub struct Field {
+    name: &'static str,
+    bitmask: u8,
 }
 
-impl Conference {
-    #[sorted::check]
-    pub fn region(&self) -> &str {
-        use self::Conference::*;
+fn main() {
+    let f = Field {
+        name: "F",
+        bitmask: 0b00011100,
+    };
 
-        #[sorted]
-        match self {
-            RustFest => "Europe",
-            RustLatam => "Latin America",
-            _ => "elsewhere",
-        }
-    }
+    let debug = format!("{:?}", f);
+
+    assert!(debug.starts_with(r#"Field { name: "F","#));
 }
-
-fn main() {}
