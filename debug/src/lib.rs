@@ -17,10 +17,12 @@ pub fn derive(input: TokenStream) -> TokenStream {
         }
     };
 
+    // Generate the .field(...) method calls for each field of the input struct
     let field_calls = fields.iter().map(|f| {
         if let Some(ref id) = f.ident {
             let mut custom_format = None;
 
+            // Find a #[debug = "format"] attribute and store the format string
             for attr in f.attrs.iter() {
                 if let syn::Meta::NameValue(ref nv) = attr.meta {
                     if nv.path.segments.len() == 1 && nv.path.segments[0].ident == "debug" {
@@ -51,11 +53,40 @@ pub fn derive(input: TokenStream) -> TokenStream {
         }
     });
 
+    // Find all of the field types which are contained in a PhantomData<T>
+    let phantom: Vec<_> = fields
+        .iter()
+        .filter_map(|f| {
+            if let syn::Type::Path(ref p) = f.ty {
+                for seg in p.path.segments.iter() {
+                    if seg.ident == "PhantomData" {
+                        if let syn::PathArguments::AngleBracketed(
+                            syn::AngleBracketedGenericArguments { ref args, .. },
+                        ) = seg.arguments
+                        {
+                            for arg in args.iter() {
+                                if let syn::GenericArgument::Type(syn::Type::Path(ref ty)) = arg {
+                                    assert!(ty.path.segments.len() == 1);
+                                    return Some(&ty.path.segments[0].ident);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            None
+        })
+        .collect();
+
     // Ensure that every type generic implements Debug
     let mut generics = input.generics.clone();
     for param in &mut generics.params {
         if let syn::GenericParam::Type(ref mut type_param) = *param {
-            type_param.bounds.push(parse_quote!(::std::fmt::Debug));
+            // The exception is if the type in inside a PhantomData, in which case it need not
+            // implement debug
+            if !phantom.iter().any(|ty| **ty == type_param.ident) {
+                type_param.bounds.push(parse_quote!(::std::fmt::Debug));
+            }
         }
     }
 
