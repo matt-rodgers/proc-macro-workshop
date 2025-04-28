@@ -56,44 +56,70 @@ pub fn derive(input: TokenStream) -> TokenStream {
     let mut generics = input.generics.clone();
     let mut associated_types = Vec::new();
 
-    // Ensure that the required type generics implement Debug.
-    // A type need not implement Debug if it only appears:
-    // - inside a PhantomData<T>, or
-    // - as part of an associated type, in which case the associated type must implement Debug
-    for param in &mut generics.params {
-        if let syn::GenericParam::Type(ref mut type_param) = *param {
-            if fields.iter().any(|f| {
-                match find_type_path_with_ident(&f.ty, &type_param.ident) {
-                    None => {
-                        // This field doesn't contain the ident we're currently considering
-                        return false;
-                    }
-                    Some(p) => {
-                        if p.path.segments.len() > 1 && p.path.segments[0].ident == type_param.ident
-                        {
-                            associated_types.push(syn::Type::Path(p.clone()));
-                            // The ident is only present as part of an associated type
+    // Check if a `#[debug(bound = "...")]` attribute is present on the top level struct
+    let mut manual_bounds = None;
+    for attr in input.attrs.iter() {
+        if attr.path().is_ident("debug") {
+            attr.parse_nested_meta(|meta| {
+                if meta.path.is_ident("bound") {
+                    let val = meta.value()?;
+                    let s: syn::LitStr = val.parse()?;
+                    manual_bounds = Some(s);
+                }
+                Ok(())
+            })
+            .expect("Failed parsing `#[debug(bound = \"...\")]`");
+        }
+    }
+
+    if manual_bounds.is_none() {
+        // Ensure that the required type generics implement Debug.
+        // A type need not implement Debug if it only appears:
+        // - inside a PhantomData<T>, or
+        // - as part of an associated type, in which case the associated type must implement Debug
+        for param in &mut generics.params {
+            if let syn::GenericParam::Type(ref mut type_param) = *param {
+                if fields.iter().any(|f| {
+                    match find_type_path_with_ident(&f.ty, &type_param.ident) {
+                        None => {
+                            // This field doesn't contain the ident we're currently considering
                             return false;
                         }
+                        Some(p) => {
+                            if p.path.segments.len() > 1
+                                && p.path.segments[0].ident == type_param.ident
+                            {
+                                associated_types.push(syn::Type::Path(p.clone()));
+                                // The ident is only present as part of an associated type
+                                return false;
+                            }
+                        }
                     }
-                }
 
-                if is_phantom_data(&f.ty, &type_param.ident) {
-                    return false;
-                }
+                    if is_phantom_data(&f.ty, &type_param.ident) {
+                        return false;
+                    }
 
-                // By default a type must implement Debug, if none of the other conditions were met
-                true
-            }) {
-                type_param.bounds.push(parse_quote!(::std::fmt::Debug));
+                    // By default a type must implement Debug, if none of the other conditions were met
+                    true
+                }) {
+                    type_param.bounds.push(parse_quote!(::std::fmt::Debug));
+                }
             }
         }
     }
 
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
-    // Generate a where clause for any associated types
-    let where_clause = if associated_types.len() > 0 {
+    // Generate or manipulate the where clause
+    let where_clause = if let Some(manual) = manual_bounds {
+        let tokens: proc_macro2::TokenStream = manual
+            .value()
+            .parse()
+            .expect("Given bounds could not be parsed as TokenStream");
+
+        parse_quote! { where #tokens }
+    } else if associated_types.len() > 0 {
         let mut new_where_clause = where_clause
             .cloned()
             .unwrap_or_else(|| parse_quote! { where });
